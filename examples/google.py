@@ -3,7 +3,7 @@ import json
 import ipaggr
 
 
-url = 'https://ip-ranges.amazonaws.com/ip-ranges.json'
+url = 'https://www.gstatic.com/ipranges/goog.json'
 
 with urllib.request.urlopen(url) as response:
     data = json.loads(response.read())
@@ -12,18 +12,19 @@ with urllib.request.urlopen(url) as response:
 
 ips = []
 for pref in data['prefixes']:
-    ips.append(pref['ip_prefix'])
-for pref in data['ipv6_prefixes']:
-    ips.append(pref['ipv6_prefix'])
+    if 'ipv4Prefix' in pref.keys():
+        ips.append(pref['ipv4Prefix'])
+    if 'ipv6Prefix' in pref.keys():
+        ips.append(pref['ipv6Prefix'])
 
 aggr = ipaggr.IPRangeAggregation(ips)
 
 print('IPv4, original: {}, aggregated: {}'.format(
     len(aggr.iprangelist_ipv4), len(aggr.aggregateds_ipv4)))
-with open('./aws_ipv4.txt', 'w') as fd:
+with open('./google_ipv4.txt', 'w') as fd:
     fd.write('\n'.join(aggr.export_aggregated_ipv4()))
 
 print('IPv6, original: {}, aggregated: {}'.format(
     len(aggr.iprangelist_ipv6), len(aggr.aggregateds_ipv6)))
-with open('./aws_ipv6.txt', 'w') as fd:
+with open('./google_ipv6.txt', 'w') as fd:
     fd.write('\n'.join(aggr.export_aggregated_ipv6()))
