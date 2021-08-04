@@ -41,6 +41,9 @@ class AggregatedRange():
         components(list): List of Aggregated Ranges.
             ipaddress.IPv4Network or IPv6Network.
 
+        dedups(list): List of dedduped ranges.
+            ipaddress.IPv4Network or IPv6Network.
+
         missings(list): List of not aggregated parts.
             ipaddress.IPv4Network or IPv6Network.
 
@@ -48,14 +51,21 @@ class AggregatedRange():
             Pared range.
 
     """
-    def __init__(self, network, components=None):
+    def __init__(self, network, components=None, dedups=None, missings=None):
         self.network = network
         self.prefixlen = self.network.prefixlen
         if components:
             self.components = components
         else:
             self.components = [self.network]
-        self.missings = []
+        if dedups:
+            self.dedups = dedups
+        else:
+            self.dedups = [self.network]
+        if missings:
+            self.missings = missings
+        else:
+            self.missings = []
         self.supernet = self.network.supernet()
         self.pare = list(self.supernet.address_exclude(self.network))[0]
 
@@ -65,23 +75,39 @@ class AggregatedRange():
     def __gt__(self, other):
         return self.network > other.network
 
+    def __repr__(self):
+        return str(self.network)
+
     def is_pare(self, other):
         if other.network == self.pare:
             return True
         return False
 
-    def aggregate(self, dest):
-        if not self.is_pare(dest):
+    def is_supernetof(self, other):
+        if (self.network.network_address <= other.network.network_address and
+            other.network.broadcast_address <= self.network.broadcast_address):
+            return True
+        return False
+
+    def dedup(self, other):
+        self.dedups += other.dedups
+
+    def aggregate(self, other):
+        if not self.is_pare(other):
             raise Exception()
         superrange = AggregatedRange(
-                self.supernet, self.components + dest.components)
-        superrange.missings = self.missings + dest.missings
+                self.supernet,
+                self.components + other.components,
+                self.dedups + other.dedups,
+                self.missings + other.missings)
         return superrange
 
     def pseudo_aggregate(self):
         superrange = AggregatedRange(
-                self.supernet, self.components)
-        superrange.missings = self.missings + [self.pare]
+                self.supernet,
+                self.components,
+                self.dedups,
+                self.missings + [self.pare])
         return superrange
 
 
@@ -96,10 +122,6 @@ class IPRangeAggregation():
         aggregatedlist_ipv4 (list): Aggregated list of ipaddress.
 
         aggregatedlist_ipv6 (list): Aggregated list of ipaddress.
-
-        missing_ipv4 (list): Missing ranges if roghly aggregated.
-
-        missing_ipv6 (list): Missing ranges if roghly aggregated.
 
     Args:
         ipranges_str (list): List of IP ranges to aggregate.
@@ -126,26 +148,23 @@ class IPRangeAggregation():
         self.iprangelist_ipv4 = list_ipv4
         self.iprangelist_ipv6 = list_ipv6
 
-        (aggr_ipv4, miss_ipv4) = \
+        aggr_ipv4 = \
             self._aggregate_iprange(list_ipv4, self.maxranges_ipv4)
-        (aggr_ipv6, miss_ipv6) = \
+        aggr_ipv6 = \
             self._aggregate_iprange(list_ipv6, self.maxranges_ipv6)
 
         self.aggregateds_ipv4 = aggr_ipv4
-        self.missings_ipv4 = miss_ipv4
         self.aggregateds_ipv6 = aggr_ipv6
-        self.missings_ipv6 = miss_ipv6
 
     def _generate_iprange(self, iprangelist_str, ignore_invalid):
         list_ipv4 = []
         list_ipv6 = []
 
         for iprange_str in iprangelist_str:
-            iprange = None
             iprange_str = iprange_str.rstrip()
             try:
                 iprange = ipaddress.IPv4Network(iprange_str)
-                list_ipv4.append(iprange)
+                list_ipv4.append(AggregatedRange(iprange))
                 continue
             except:
                 pass
@@ -153,14 +172,14 @@ class IPRangeAggregation():
             try:
                 ipaddr = ipaddress.IPv4Address(iprange_str)
                 iprange = ipaddress.IPv4Network(ipaddr)
-                list_ipv4.append(iprange)
+                list_ipv4.append(AggregatedRange(iprange))
                 continue
             except:
                 pass
 
             try:
                 iprange = ipaddress.IPv6Network(iprange_str)
-                list_ipv6.append(iprange)
+                list_ipv6.append(AggregatedRange(iprange))
                 continue
             except:
                 pass
@@ -168,7 +187,7 @@ class IPRangeAggregation():
             try:
                 ipaddr = ipaddress.IPv6Address(iprange_str)
                 iprange = ipaddress.IPv6Network(ipaddr)
-                list_ipv6.append(iprange)
+                list_ipv6.append(AggregatedRange(iprange))
                 continue
             except:
                 pass
@@ -179,27 +198,30 @@ class IPRangeAggregation():
         return (list_ipv4, list_ipv6)
 
     def _aggregate_iprange(self, list_ip, maxranges):
+        if not list_ip: return []
+
         uniq_list = self._uniq_iprange(list_ip)
         aggr_list = self._do_aggregate(uniq_list)
         if maxranges and maxranges >= 1:
-            (aggr_list, missing_list) = \
-                    self._do_rough_aggregate(aggr_list, maxranges)
-        else:
-            missing_list = []
+            aggr_list = self._do_rough_aggregate(aggr_list, maxranges)
 
-        return (aggr_list, missing_list)
+        return aggr_list
 
     def _uniq_iprange(self, list_ip):
         uniq_list = []
-        sorted_list = list(set(list_ip))
+        sorted_list = list_ip.copy()
         sorted_list.sort()
 
         countdown = Countdown(prefix='Unification: ', suffix=' left.')
+
         base = sorted_list.pop(0)
         while sorted_list:
             countdown.print(len(sorted_list))
             compared = sorted_list.pop(0)
-            if compared.broadcast_address > base.broadcast_address:
+            if base.is_supernetof(compared):
+                base.dedup(compared)
+                del compared
+            else:
                 uniq_list.append(base)
                 base = compared
         uniq_list.append(base)
@@ -209,10 +231,7 @@ class IPRangeAggregation():
 
     def _do_aggregate(self, uniq_list_in):
         aggr_list = []
-        uniq_list = []
-
-        for network in uniq_list_in:
-            uniq_list.append(AggregatedRange(network))
+        uniq_list = uniq_list_in.copy()
 
         countdown = Countdown(prefix='Aggregation: ', suffix=' left.')
         while uniq_list:
@@ -246,11 +265,10 @@ class IPRangeAggregation():
                 bases.insert(0, compared)
 
         countdown.close('Done')
-        return list(arange.network for arange in aggr_list)
+        return aggr_list
 
     def _do_rough_aggregate(self, aggr_list_in, maxranges):
-        def _recursive_aggregate(base, supers_in):
-            supers = supers_in.copy()
+        def _recursive_aggregate(base, supers):
             compareds = [snet for snet in supers if snet.prefixlen == base.prefixlen]
             for compared in compareds:
                 if base.is_pare(compared):
@@ -261,9 +279,7 @@ class IPRangeAggregation():
                 supers.append(base)
                 return supers
 
-        aggr_list = []
-        for network in aggr_list_in:
-            aggr_list.append(AggregatedRange(network))
+        aggr_list = aggr_list_in.copy()
 
         countdown = Countdown(prefix='RoughAggregation: ', suffix=' left.')
         while len(aggr_list) > maxranges:
@@ -272,39 +288,31 @@ class IPRangeAggregation():
             prefixlen = max([arange.prefixlen for arange in aggr_list])
 
             bases = [base for base in aggr_list if base.prefixlen == prefixlen]
-            supers = [snet for snet in aggr_list if snet.prefixlen < prefixlen]
+            aggr_list = [snet for snet in aggr_list if snet.prefixlen < prefixlen]
             for base in bases:
                 aggregated = base.pseudo_aggregate()
-                supers = _recursive_aggregate(aggregated, supers)
-            aggr_list = supers
+                _recursive_aggregate(aggregated, aggr_list)
 
         countdown.close('Done')
 
-        aggr_list = []
-        missing_list = []
-        for arange in aggr_list:
-            if len(arange.components) == 1:
-                aggr_list.append(arange.components[0])
-            else:
-                aggr_list.append(arange.network)
-                missing_list += arange.missings
-
-        return (aggr_list, missing_list)
+        return aggr_list
 
     def export_aggregated_ipv4(self):
-        return [str(arange) for arange in self.aggregateds_ipv4]
+        return [str(arange.network) for arange in self.aggregateds_ipv4]
 
     def export_aggregated_ipv6(self):
-        return [str(arange) for arange in self.aggregateds_ipv6]
+        return [str(arange.network) for arange in self.aggregateds_ipv6]
 
     def export_aggregated(self):
         return self.export_aggregated_ipv4() + self.export_aggregated_ipv6()
 
     def export_missings_ipv4(self):
-        return [str(missing) for missing in self.missings_ipv4]
+        return [str(missing) for arange in self.aggregateds_ipv4
+                for missing in arange.missings]
 
     def export_missings_ipv6(self):
-        return [str(missing) for missing in self.missings_ipv6]
+        return [str(missing) for arange in self.aggregateds_ipv6
+                for missing in arange.missings]
 
     def export_missings(self):
         return self.export_missings_ipv4() + self.export_missings_ipv6()
