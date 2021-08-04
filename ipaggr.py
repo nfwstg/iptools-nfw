@@ -2,9 +2,8 @@ import ipaddress
 import os
 import glob
 import ipaddress
-import tqdm
-
 import sys
+
 
 class Countdown():
     """Print countdown.
@@ -60,8 +59,14 @@ class AggregatedRange():
         self.supernet = self.network.supernet()
         self.pare = list(self.supernet.address_exclude(self.network))[0]
 
-    def is_pare(self, aggregatedrange):
-        if aggregatedrange.network == self.pare:
+    def __lt__(self, other):
+        return self.network < other.network
+
+    def __gt__(self, other):
+        return self.network > other.network
+
+    def is_pare(self, other):
+        if other.network == self.pare:
             return True
         return False
 
@@ -187,48 +192,61 @@ class IPRangeAggregation():
     def _uniq_iprange(self, list_ip):
         uniq_list = []
         sorted_list = list(set(list_ip))
+        sorted_list.sort()
 
         countdown = Countdown(prefix='Unification: ', suffix=' left.')
+        base = sorted_list.pop(0)
         while sorted_list:
             countdown.print(len(sorted_list))
-            sorted_list.sort(key=lambda x: x.prefixlen, reverse=True)
-            base = sorted_list.pop(0)
-
-            for compared in sorted_list:
-                # Sama as follows, but subnet_of is very heavy.
-                # if base.subnet_of(compared):
-                #     break
-                if (compared.network_address <= base.network_address and
-                    base.broadcast_address <= compared.broadcast_address):
-                    break
-            else:
+            compared = sorted_list.pop(0)
+            if compared.broadcast_address > base.broadcast_address:
                 uniq_list.append(base)
+                base = compared
+        uniq_list.append(base)
 
         countdown.close('Done')
         return uniq_list
 
-    def _do_aggregate(self, uniq_list):
+    def _do_aggregate(self, uniq_list_in):
         aggr_list = []
-        sorted_list = sorted(uniq_list, key=lambda x: x.prefixlen, reverse=True)
+        uniq_list = []
+
+        for network in uniq_list_in:
+            uniq_list.append(AggregatedRange(network))
 
         countdown = Countdown(prefix='Aggregation: ', suffix=' left.')
-        while sorted_list:
-            countdown.print(len(sorted_list))
-            sorted_list.sort(key=lambda x: x.prefixlen, reverse=True)
-            base = sorted_list.pop(0)
-            aggregated = base.supernet()
-            pared = list(aggregated.address_exclude(base))[0]
+        while uniq_list:
+            countdown.print(len(uniq_list))
 
-            for compared in sorted_list:
-                if compared == pared:
-                    sorted_list.remove(compared)
-                    sorted_list.append(aggregated)
+            prefixlen = max([base.prefixlen for base in uniq_list])
+
+            bases = [base for base in uniq_list
+                    if base.prefixlen == prefixlen]
+            bases.sort()
+            uniq_list = [base for base in uniq_list
+                    if base.prefixlen < prefixlen]
+
+            while bases:
+                # Case: Last One.
+                if len(bases) == 1:
+                    aggr_list.append(bases.pop(0))
                     break
-            else:
+
+                base = bases.pop(0)
+                compared = bases.pop(0)
+
+                # Case: Aggregated
+                if base.is_pare(compared):
+                    aggregated = base.aggregate(compared)
+                    uniq_list.insert(0, aggregated)
+                    continue
+
+                # Case: Pare not exists, not aggregate
                 aggr_list.append(base)
+                bases.insert(0, compared)
 
         countdown.close('Done')
-        return sorted(aggr_list)
+        return list(arange.network for arange in aggr_list)
 
     def _do_rough_aggregate(self, aggr_list_in, maxranges):
         def _recursive_aggregate(base, supers_in):
@@ -243,28 +261,28 @@ class IPRangeAggregation():
                 supers.append(base)
                 return supers
 
-        aranges = []
+        aggr_list = []
         for network in aggr_list_in:
-            aranges.append(AggregatedRange(network))
+            aggr_list.append(AggregatedRange(network))
 
         countdown = Countdown(prefix='RoughAggregation: ', suffix=' left.')
-        while len(aranges) > maxranges:
-            countdown.print(len(aranges) - maxranges)
+        while len(aggr_list) > maxranges:
+            countdown.print(len(aggr_list) - maxranges)
 
-            prefixlen = max([arange.prefixlen for arange in aranges])
+            prefixlen = max([arange.prefixlen for arange in aggr_list])
 
-            bases = [base for base in aranges if base.prefixlen == prefixlen]
-            supers = [snet for snet in aranges if snet.prefixlen < prefixlen]
+            bases = [base for base in aggr_list if base.prefixlen == prefixlen]
+            supers = [snet for snet in aggr_list if snet.prefixlen < prefixlen]
             for base in bases:
                 aggregated = base.pseudo_aggregate()
                 supers = _recursive_aggregate(aggregated, supers)
-            aranges = supers
+            aggr_list = supers
 
         countdown.close('Done')
 
         aggr_list = []
         missing_list = []
-        for arange in aranges:
+        for arange in aggr_list:
             if len(arange.components) == 1:
                 aggr_list.append(arange.components[0])
             else:
@@ -321,6 +339,7 @@ if __name__ == '__main__':
             lines.append(line)
 
     maxrange = args.maxranges
+
     aggr = IPRangeAggregation(lines,
             maxranges_ipv4=maxrange, maxranges_ipv6=maxrange)
     print('Aggregateds')
