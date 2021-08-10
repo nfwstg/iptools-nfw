@@ -1,7 +1,4 @@
 import ipaddress
-import os
-import glob
-import ipaddress
 import sys
 
 
