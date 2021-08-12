@@ -5,20 +5,6 @@ import glob
 import re
 
 
-def tt(func):
-    def wrapper(*args, **kwargs):
-        import datetime
-        start = datetime.datetime.now()
-
-        result = func(*args, **kwargs)
-
-        end = datetime.datetime.now()
-        print('----time----')
-        print(end - start)
-        return result
-    return wrapper
-
-
 class Countdown():
     """Print countdown.
 
@@ -113,7 +99,7 @@ class CompiledFiles():
 
         return compiledfiles
 
-    def grep(self, iprange_str):
+    def grep(self, iprange_str, match_type=None):
         """ Find input ipaddress in compiled files.
 
         Args:
@@ -129,6 +115,10 @@ class CompiledFiles():
 
         for compiledfile in self.compiledfiles:
             results += compiledfile.grep(network)
+
+        if match_type:
+            results = [result for result in results
+                        if result['match_type'] == match_type]
 
         return results
 
@@ -214,11 +204,11 @@ class CompiledFile():
             match_type = None
             target = network_attr['network']
             if keyword == target:
-                match_type = "Match"
+                match_type = "match"
             elif keyword.subnet_of(target):
-                match_type = "Included"
+                match_type = "included"
             elif target.subnet_of(keyword):
-                match_type = "Include"
+                match_type = "include"
 
             if match_type:
                 result = network_attr.copy()
@@ -241,8 +231,11 @@ if __name__ == '__main__':
                         nargs='*',
                         default=[],
                         help='Target files and directories to search.')
+    parser.add_argument('-m',
+                        default=None,
+                        help='Match type, <match, included, include>')
     args = parser.parse_args()
 
     # Run
     compiledfiles = CompiledFiles(args.filenames)
-    print(compiledfiles.grep(args.network))
+    print(compiledfiles.grep(args.network, match_type=args.m))
