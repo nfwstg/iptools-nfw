@@ -1,29 +1,7 @@
 import ipaddress
 import sys
-
-
-class Countdown():
-    """Print countdown.
-
-    Attributes:
-        prefix(str): Prefix for printed string.
-        suffix(str): Suffix for printed string.
-
-    """
-    def __init__(self, prefix='', suffix=''):
-        self.prefix = prefix
-        self.suffix = suffix
-
-    def print(self, num):
-        print('{}{}{}\033[0K\r'.format(
-            self.prefix, num, self.suffix),
-            end='',
-            file=sys.stderr)
-
-    def close(self, message):
-        sys.stdout.flush()
-        print('{}{}\033[0K'.format(self.prefix, message),
-            file=sys.stderr)
+from tools import str2network
+from tools import Countdown
 
 
 class AggregatedRange():
@@ -158,39 +136,16 @@ class IPRangeAggregation():
         list_ipv6 = []
 
         for iprange_str in iprangelist_str:
-            iprange_str = iprange_str.rstrip()
             try:
-                iprange = ipaddress.IPv4Network(iprange_str)
-                list_ipv4.append(AggregatedRange(iprange))
-                continue
-            except:
-                pass
+                network = str2network(iprange_str)
+            except Exception as e:
+                if not ignore_invalid:
+                    raise e
 
-            try:
-                ipaddr = ipaddress.IPv4Address(iprange_str)
-                iprange = ipaddress.IPv4Network(ipaddr)
-                list_ipv4.append(AggregatedRange(iprange))
-                continue
-            except:
-                pass
-
-            try:
-                iprange = ipaddress.IPv6Network(iprange_str)
-                list_ipv6.append(AggregatedRange(iprange))
-                continue
-            except:
-                pass
-
-            try:
-                ipaddr = ipaddress.IPv6Address(iprange_str)
-                iprange = ipaddress.IPv6Network(ipaddr)
-                list_ipv6.append(AggregatedRange(iprange))
-                continue
-            except:
-                pass
-
-            if not ignore_invalid:
-                raise Exception("Range format error, {}".format(iprange_str))
+            if isinstance(network, ipaddress.IPv4Network):
+                list_ipv4.append(AggregatedRange(network))
+            elif isinstance(network, ipaddress.IPv6Network):
+                list_ipv6.append(AggregatedRange(network))
 
         return (list_ipv4, list_ipv6)
 

@@ -1,64 +1,9 @@
-import sys
 import ipaddress
 import os
 import glob
 import re
-
-
-class Countdown():
-    """Print countdown.
-
-    Attributes:
-        prefix(str): Prefix for printed string.
-        suffix(str): Suffix for printed string.
-
-    """
-    def __init__(self, prefix='', suffix=''):
-        self.prefix = prefix
-        self.suffix = suffix
-
-    def print(self, num):
-        print('{}{}{}\033[0K\r'.format(
-            self.prefix, num, self.suffix),
-            end='',
-            file=sys.stderr)
-
-    def close(self, message):
-        sys.stdout.flush()
-        print('{}{}\033[0K'.format(self.prefix, message),
-            file=sys.stderr)
-
-
-def str2network(iprange_str):
-    network = None
-
-    if not network:
-        try:
-            network = ipaddress.IPv4Network(iprange_str)
-        except:
-            network = None
-    if not network:
-        try:
-            ipaddr = ipaddress.IPv4Address(iprange_str)
-            network = ipaddress.IPv4Network(ipaddr)
-        except:
-            network = None
-    if not network:
-        try:
-            network = ipaddress.IPv6Network(iprange_str)
-        except:
-            network = None
-    if not network:
-        try:
-            ipaddr = ipaddress.IPv6Address(iprange_str)
-            network = ipaddress.IPv6Network(ipaddr)
-        except:
-            network = None
-    if not network:
-        raise Exception("Range format error, {}".format(iprange_str))
-
-    return network
-
+from tools import str2network
+from tools import cache
 
 class CompiledFiles():
     """Group of CompiledFile.
@@ -122,6 +67,23 @@ class CompiledFiles():
 
         return results
 
+    def print(self, keyword, verbose=False, match_type=False):
+        results = self.grep(keyword)
+        for result in results:
+            if match_type:
+                if result['match_type'] != match_type:
+                    continue
+            if verbose:
+                print('{}:{},{}:{}'.format(
+                    result['filename'],
+                    result['row'], result['col'],
+                    result['string']
+                    ))
+            else:
+                print('{}:{},{}'.format(
+                    result['filename'],
+                    result['row'], result['col']))
+
 
 class CompiledFile():
     """Compiled iprange data from target file.
@@ -160,6 +122,7 @@ class CompiledFile():
             self._network_attrs_ipv4 = []
             self._network_attrs_ipv6 = []
 
+    @cache(is_method=True)
     def _compile(self, filename):
         try:
             fd = open(filename, 'r')
@@ -170,6 +133,7 @@ class CompiledFile():
         network_attrs_ipv6 = []
         regex_ip = '[\d\.:]+(/\d{1,3}){0,1}'
         for row, line in enumerate(fd, 1):
+            line = line.strip()
             candidates = re.finditer(regex_ip, line)
             for candidate in candidates:
                 try:
@@ -179,6 +143,7 @@ class CompiledFile():
 
                 if isinstance(network, ipaddress.IPv4Network):
                     network_attrs_ipv4.append({
+                        'filename': filename,
                         'network': network,
                         'row': row,
                         'col': candidate.span()[0],
@@ -186,6 +151,7 @@ class CompiledFile():
 
                 if isinstance(network, ipaddress.IPv6Network):
                     network_attrs_ipv6.append({
+                        'filename': filename,
                         'network': network,
                         'row': row,
                         'col': candidate.span()[0],
@@ -213,7 +179,6 @@ class CompiledFile():
             if match_type:
                 result = network_attr.copy()
                 result['match_type'] = match_type
-                result['finename'] = self.filename
                 results.append(result)
 
         return results
@@ -226,7 +191,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('network',
                         default=None,
-                        help='Netwrok to searh, ex.) 192.168.1.1/32')
+                        help='Network to searh, ex.) 192.168.1.1/32')
     parser.add_argument('filenames',
                         nargs='*',
                         default=[],
@@ -234,8 +199,11 @@ if __name__ == '__main__':
     parser.add_argument('-m',
                         default=None,
                         help='Match type, <match, included, include>')
+    parser.add_argument('-v',
+                        action='store_true',
+                        help='Show result details')
     args = parser.parse_args()
 
     # Run
     compiledfiles = CompiledFiles(args.filenames)
-    print(compiledfiles.grep(args.network, match_type=args.m))
+    compiledfiles.print(args.network, match_type=args.m, verbose=args.v)
