@@ -2,8 +2,10 @@ import ipaddress
 import os
 import glob
 import re
+import pickle
+import hashlib
 from tools import str2network
-from tools import cache
+
 
 class CompiledFiles():
     """Group of CompiledFile.
@@ -15,14 +17,15 @@ class CompiledFiles():
         filenames(list): List of target filenames and directory names.
 
     """
-    def __init__(self, filenames):
-        self.compiledfiles = self._compile(filenames)
+    def __init__(self, filenames, cachedir="~/.ipgrep"):
+        self.compiledfiles = self._compile(filenames, cachedir)
 
-    def _compile(self, filenames):
+    def _compile(self, filenames, cachedir):
         """ Compile filenames.
 
         Args:
             filenames(list): List of target filenames and directory names.
+            cachedir(str): File path to save cached data.
 
         Returns:
             list: List of CompiledFile.
@@ -40,7 +43,7 @@ class CompiledFiles():
 
         compiledfiles = []
         for candidate in candidates:
-            compiledfiles.append(CompiledFile(candidate))
+            compiledfiles.append(CompiledFile(candidate, cachedir))
 
         return compiledfiles
 
@@ -67,7 +70,19 @@ class CompiledFiles():
 
         return results
 
-    def print(self, keyword, verbose=False, match_type=False):
+    def print(self, keyword, verbose=False, match_type=None):
+        """Print grep result on stdout.
+
+        Args:
+            keyword(str): Network to search.
+            verbose(bool): Show verbose or not, default: False.
+            match_type(str): Show specific type only.
+                match: Show exact matched IP string only.
+                included: Show IP string which include keyword range.
+                include: Show IP string which is included in kyeword range.
+                Default: None
+
+        """
         results = self.grep(keyword)
         for result in results:
             if match_type:
@@ -109,8 +124,9 @@ class CompiledFile():
         filename(str): Search target file name.
 
     """
-    def __init__(self, filename):
+    def __init__(self, filename, cachedir):
         self.filename = filename
+        self.cachedir = cachedir
         compiled = self._compile(filename)
 
         if compiled:
@@ -122,7 +138,49 @@ class CompiledFile():
             self._network_attrs_ipv4 = []
             self._network_attrs_ipv6 = []
 
-    @cache(is_method=True)
+    def cache(func):
+        """Decorator to cache compiled data.
+
+        Note:
+            Args of function must be filename string only.
+        """
+        def check_hash(filename):
+            fd = open(filename, 'rb')
+            md5 = hashlib.md5(fd.read()).hexdigest()
+            return md5
+
+        def wrapper(*args, **kwargs):
+            if len(args) != 2 or kwargs:
+                raise Exception("Invalid apply for cache decorator.")
+
+            self = args[0]
+            filename = args[1]
+
+            cachedir = os.path.expanduser(self.cachedir)
+            if not os.path.isdir(cachedir):
+                if os.path.exists(cachedir):
+                    raise Exception("Cache dir name is already used.")
+                os.mkdir(cachedir)
+
+
+            md5 = check_hash(filename)
+            cachepath = os.path.join(cachedir, md5)
+
+            data = None
+            if os.path.isfile(cachepath):
+                with open(cachepath, 'rb') as fd:
+                    data = pickle.load(fd)
+            else:
+                data = func(*args)
+                if not os.path.isdir(cachedir):
+                    os.makedirs(cachedir)
+                with open(cachepath, 'wb') as fd:
+                    pickle.dump(data, fd)
+            return data
+
+        return wrapper
+
+    @cache
     def _compile(self, filename):
         try:
             fd = open(filename, 'r')
@@ -131,7 +189,7 @@ class CompiledFile():
 
         network_attrs_ipv4 = []
         network_attrs_ipv6 = []
-        regex_ip = '[\d\.:]+(/\d{1,3}){0,1}'
+        regex_ip = r'[\d\.:]+(/\d{1,3}){0,1}'
         for row, line in enumerate(fd, 1):
             line = line.strip()
             candidates = re.finditer(regex_ip, line)
@@ -159,6 +217,15 @@ class CompiledFile():
         return (network_attrs_ipv4, network_attrs_ipv6)
 
     def grep(self, keyword):
+        """Search keyword ip address or network in self.
+
+        Args:
+            keyword(IPv4Network or IPv6Network): Search keyword.
+
+        Output:
+            list: List of found location of keyword.
+
+        """
         network_attrs = []
         if isinstance(keyword, ipaddress.IPv4Network):
             network_attrs = self._network_attrs_ipv4
