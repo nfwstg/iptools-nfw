@@ -1,14 +1,13 @@
-import urllib.request
-import json
+import requests
 import ipaggr
 
 
 url = 'https://ip-ranges.amazonaws.com/ip-ranges.json'
 
-with urllib.request.urlopen(url) as response:
-    data = json.loads(response.read())
-    headers = response.getheaders()
-    status = response.getcode()
+with requests.get(url) as response:
+    data = response.json()
+    headers = response.headers
+    status = response.status_code
 
 ips = []
 for pref in data['prefixes']:

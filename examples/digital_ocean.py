@@ -1,14 +1,14 @@
-import urllib.request
+import requests
 import ipaggr
 
 
 url = 'https://digitalocean.com/geo/google.csv'
 headers = {'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:90.0) Gecko/20100101 Firefox/90.0'}
-req = urllib.request.Request(url, headers=headers)
-with urllib.request.urlopen(req) as response:
-    data = response.read().decode()
-    headers = response.getheaders()
-    status = response.getcode()
+
+with requests.get(url, headers=headers) as response:
+    data = response.text
+    headers = response.headers
+    status = response.status_code
 
 ips = []
 for pref in data.split('\n'):

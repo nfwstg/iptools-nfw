@@ -89,7 +89,7 @@ class CompiledFile():
     """Compiled iprange data from target file.
 
     Attributes:
-        finemane(str): Target file name.
+        filename(str): Target file name.
 
         readable(bool): True for compiled, False for not compiled by format unmatch.
 

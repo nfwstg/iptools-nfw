@@ -1,7 +1,6 @@
-import urllib.request
-import json
-import sys
+import requests
 import ipaggr
+import sys
 
 
 print('Check latest URL and input:')
@@ -9,10 +8,10 @@ print('https://www.microsoft.com/en-us/download/confirmation.aspx?id=56519')
 url = input("input:")
 
 
-with urllib.request.urlopen(url) as response:
-    data = json.loads(response.read())
-    headers = response.getheaders()
-    status = response.getcode()
+with requests.get(url) as response:
+    data = response.json()
+    headers = response.headers
+    status = response.status_code
 
 ips = []
 for pref in data['values']:
