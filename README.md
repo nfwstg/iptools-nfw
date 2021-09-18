@@ -25,10 +25,27 @@ Check ./examples/aws.py
 
 Usage(ipgrep.py)
 -----
-TODO
+```
+usage: ipgrep.py [-h] [-m M] [-v] network [filenames [filenames ...]]
+
+positional arguments:
+  network     Network to searh, ex.) 192.168.1.1/32
+  filenames   Target files and directories to search.
+
+optional arguments:
+  -h, --help  show this help message and exit
+  -m M        Match type, <match, included, include>
+  -v          Show result details
+
+```
+
+Note(ipgrep.py)
+-----
+Greped files are cached in~/.ipgrep directory.
 
 
 Exsample(ipgrep.py)
 -----
-TODO
-
+```
+python3 ./ipgrep.py 0.0.0.0/0 <Target file or directory>
+```
