@@ -57,14 +57,18 @@ def str2network(iprange_str_in):
 class Countdown():
     """Print countdown.
 
-    Attributes:
+    Args:
         prefix(str): Prefix for printed string.
         suffix(str): Suffix for printed string.
+        reportmode(str): Output target, default: stdout.
+            stdout: Output progress to stdout.
+            None: Output nothing.
 
     """
-    def __init__(self, prefix='', suffix=''):
+    def __init__(self, prefix='', suffix='', reportmode='stdout'):
         self.prefix = prefix
         self.suffix = suffix
+        self.reportmode = reportmode
 
     def print(self, num):
         """Print progress.
@@ -73,10 +77,11 @@ class Countdown():
             num(int): Printed Number.
 
         """
-        print('{}{}{}\033[0K\r'.format(
-            self.prefix, num, self.suffix),
-            end='',
-            file=sys.stderr)
+        if self.reportmode == 'stdout':
+            print('{}{}{}\033[0K\r'.format(
+                self.prefix, num, self.suffix),
+                end='',
+                file=sys.stderr)
 
     def close(self, message):
         """Stop countdown.
@@ -86,9 +91,10 @@ class Countdown():
             message(str): Terminate string.
 
         """
-        sys.stdout.flush()
-        print('{}{}\033[0K'.format(self.prefix, message),
-            file=sys.stderr)
+        if self.reportmode == 'stdout':
+            sys.stdout.flush()
+            print('{}{}\033[0K'.format(self.prefix, message),
+                file=sys.stderr)
 
 
 ########################################

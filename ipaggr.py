@@ -6,6 +6,17 @@ from tools import Countdown
 class AggregatedRange():
     """Aggregated IP range.
 
+    Args:
+        network(ipaddress.IPv4Network or IPv6Network):
+            IP range.
+
+        components(list): List of aggregated partial ranges, default: None.
+
+        dedups(list): List of dedupped ranges, default: None.
+
+        missings(list): List of not exsisting ranges in network, default: None.
+            For rough aggregate mode only.
+
     Attributes:
         network(ipaddress.IPv4Network or IPv6Network):
             IP range.
@@ -41,8 +52,13 @@ class AggregatedRange():
             self.missings = missings
         else:
             self.missings = []
-        self.supernet = self.network.supernet()
-        self.pare = list(self.supernet.address_exclude(self.network))[0]
+
+        if self.prefixlen != 0:
+            self.supernet = self.network.supernet()
+            self.pare = list(self.supernet.address_exclude(self.network))[0]
+        else:
+            self.supernet = None
+            self.pare = None
 
     def __lt__(self, other):
         return self.network < other.network
@@ -106,15 +122,6 @@ class AggregatedRange():
 class IPRangeAggregation():
     """Aggregate IP ranges.
 
-    Attributes:
-        iprangelist_ipv4 (list): List of ipaddress format data for ipv4.
-
-        iprangelist_ipv6 (list): List of ipaddress format data for ipv6.
-
-        aggregatedlist_ipv4 (list): Aggregated list of ipaddress.
-
-        aggregatedlist_ipv6 (list): Aggregated list of ipaddress.
-
     Args:
         ipranges_str (list): List of IP ranges to aggregate.
             IP range must be string like "XXX.XXX.XXX.XXX/24".
@@ -128,11 +135,23 @@ class IPRangeAggregation():
         ignore_invalid (bool): Ignore strange range format, default: False.
             Raise Exception for strange range format when False.
 
+        verbose(bool): Show progress and details or not.
+
+    Attributes:
+        iprangelist_ipv4 (list): List of ipaddress format data for ipv4.
+
+        iprangelist_ipv6 (list): List of ipaddress format data for ipv6.
+
+        aggregatedlist_ipv4 (list): Aggregated list of ipaddress.
+
+        aggregatedlist_ipv6 (list): Aggregated list of ipaddress.
+
     """
 
     def __init__(self, iprangelist_str,
                  maxranges_ipv4=None, maxranges_ipv6=None,
-                 ignore_invalid=False):
+                 ignore_invalid=False, verbose=False):
+        self.verbose = verbose
         self.maxranges_ipv4 = maxranges_ipv4
         self.maxranges_ipv6 = maxranges_ipv6
         self.ignore_invalid = ignore_invalid
@@ -181,7 +200,10 @@ class IPRangeAggregation():
         sorted_list = list_ip.copy()
         sorted_list.sort()
 
-        countdown = Countdown(prefix='Unification: ', suffix=' left.')
+        if self.verbose:
+            countdown = Countdown(prefix='Unification: ', suffix=' left.')
+        else:
+            countdown = Countdown(reportmode=None)
 
         base = sorted_list.pop(0)
         while sorted_list:
@@ -202,7 +224,11 @@ class IPRangeAggregation():
         aggr_list = []
         uniq_list = uniq_list_in.copy()
 
-        countdown = Countdown(prefix='Aggregation: ', suffix=' left.')
+        if self.verbose:
+            countdown = Countdown(prefix='Aggregation: ', suffix=' left.')
+        else:
+            countdown = Countdown(reportmode=None)
+
         while uniq_list:
             countdown.print(len(uniq_list))
 
@@ -266,7 +292,11 @@ class IPRangeAggregation():
 
         aggr_list = aggr_list_in.copy()
 
-        countdown = Countdown(prefix='RoughAggregation: ', suffix=' left.')
+        if self.verbose:
+            countdown = Countdown(prefix='RoughAggregation: ', suffix=' left.')
+        else:
+            countdown = Countdown(reportmode=None)
+
         while len(aggr_list) > maxranges:
             countdown.print(len(aggr_list) - maxranges)
 
@@ -343,6 +373,9 @@ if __name__ == '__main__':
                         help='Maxrange for rough aggregate.' +
                              '0 means disable rough aggregate.' +
                              'Default: 0')
+    parser.add_argument('-v', '--verbose',
+                        action='store_true',
+                        help='Show progress and details')
     args = parser.parse_args()
 
     # Run
@@ -357,12 +390,15 @@ if __name__ == '__main__':
                 break
             lines.append(line)
 
-    maxrange = args.maxranges
-
     aggr = IPRangeAggregation(lines,
-                              maxranges_ipv4=maxrange,
-                              maxranges_ipv6=maxrange)
-    print('Aggregateds')
-    print('\n'.join(aggr.export_aggregated()))
-    print('Missings')
-    print('\n'.join(aggr.export_missings()))
+                              maxranges_ipv4=args.maxranges,
+                              maxranges_ipv6=args.maxranges,
+                              verbose=args.verbose)
+    if args.verbose:
+        print('Aggregateds')
+        print('\n'.join(aggr.export_aggregated()))
+        if args.maxranges > 0:
+            print('Missings')
+            print('\n'.join(aggr.export_missings()))
+    else:
+        print('\n'.join(aggr.export_aggregated()))
